@@ -1,7 +1,9 @@
 const std = @import("std");
 const expect = std.testing.expect;
 
-fn SinglyList(comptime T: type) type {
+//TODO: if need be implement a Circular Doubly linked list
+
+pub fn SinglyList(comptime T: type) type {
     return struct {
         const Self = @This();
         const Node = struct {
@@ -365,9 +367,15 @@ pub fn DoublyList(comptime T: type) type {
         pub fn removeFirst(self: *Self) !void {
             if (self.head) |node| {
                 var current_head = node;
-                var new_head = current_head.next orelse null;
-                current_head.next.?.previous = null;
-                self.head = new_head;
+                if (current_head.next) |next_head| {
+                    var new_head = next_head;
+                    new_head.previous = null;
+                    self.head = new_head;
+                } else {
+                    //if after removing the current_head there are no more nodes
+                    self.head = null;
+                    self.tail = null;
+                }
                 self.freeNode(current_head);
             } else {
                 return error.ErrorCannotRemoveFirstNodeOFAnEmptyList;
