@@ -1,5 +1,7 @@
 const std = @import("std");
 const expect = std.testing.expect;
+const assert = std.debug.assert;
+const print = std.debug.print;
 
 pub fn SinglyList(comptime T: type) type {
     return struct {
@@ -23,6 +25,10 @@ pub fn SinglyList(comptime T: type) type {
             return new_node;
         }
 
+        fn isEmpty(self: Self) bool {
+            return if (self.head == null) true else false;
+        }
+
         pub fn append(self: *Self, value: T) !void {
             var new_node = try self.createNode(value);
             //if head alread has some nodes traverse to insert position
@@ -38,36 +44,33 @@ pub fn SinglyList(comptime T: type) type {
         }
 
         pub fn appendAfter(self: *Self, after: T, value: T) !void {
-            if (self.head) |node| {
-                var current_head = node;
-                if (node.data == after) {
+            assert(!self.isEmpty());
+            const node = self.head.?;
+            var current_head = node;
+            if (node.data == after) {
+                var new_node = try self.createNode(value);
+                new_node.next = current_head.next orelse null;
+                current_head.next = new_node;
+                return;
+            }
+            while (current_head.next) |next_node| : (current_head = next_node) {
+                if (next_node.data == after) {
                     var new_node = try self.createNode(value);
-                    new_node.next = current_head.next orelse null;
-                    current_head.next = new_node;
-                    return;
-                }
-                while (current_head.next) |next_node| : (current_head = next_node) {
-                    if (next_node.data == after) {
-                        var new_node = try self.createNode(value);
-                        new_node.next = next_node.next orelse null;
-                        var current_node = next_node;
-                        current_node.next = new_node;
-                        break;
-                    }
-                } else {
-                    std.log.err("The value of after {} doesn't exist in the list", .{after});
-                    return error.AfterValueNotInList;
+                    new_node.next = next_node.next orelse null;
+                    var current_node = next_node;
+                    current_node.next = new_node;
+                    break;
                 }
             } else {
-                return error.CannotAppendAfterAnEmptyList;
+                std.log.err("The value of after {} doesn't exist in the list", .{after});
+                return error.ValueNotInList;
             }
         }
 
         pub fn prepend(self: *Self, value: T) !void {
             var new_node = try self.createNode(value);
             var head = self.head orelse {
-                std.log.err("can not prepend {} to an empty list", .{value});
-                return error.CannotPrependToAnEmptyList;
+                return try self.append(value);
             };
             //put new node before head
             new_node.next = head;
@@ -77,94 +80,83 @@ pub fn SinglyList(comptime T: type) type {
         }
 
         pub fn prependBefore(self: *Self, before: T, value: T) !void {
-            if (self.head) |node| {
-                if (node.data == before) {
-                    try self.prepend(value);
-                    return;
-                }
-                var current_head = node;
-                while (current_head.next) |next_node| : (current_head = next_node) {
-                    if (next_node.data == before) {
-                        var new_node = try self.createNode(value);
-                        new_node.next = next_node;
-                        current_head.next = new_node;
-                        break;
-                    }
-                } else {
-                    std.log.err("The value of before {} doesn't exist in the list", .{before});
-                    return error.ErrorBeforeValueNotInList;
+            assert(!self.isEmpty());
+            const node = self.head.?;
+            if (node.data == before) {
+                try self.prepend(value);
+                return;
+            }
+            var current_head = node;
+            while (current_head.next) |next_node| : (current_head = next_node) {
+                if (next_node.data == before) {
+                    var new_node = try self.createNode(value);
+                    new_node.next = next_node;
+                    current_head.next = new_node;
+                    break;
                 }
             } else {
-                return error.ErrorCannotPrependValueBeforeAnEmptyList;
+                std.log.err("The value of before {} doesn't exist in the list", .{before});
+                return error.ValueNotInList;
             }
         }
 
-        pub fn removeFirst(self: *Self) !void {
-            if (self.head) |node| {
-                var current_head = node;
-                var new_head = current_head.next orelse null;
-                self.head = new_head;
+        pub fn removeFirst(self: *Self) void {
+            assert(!self.isEmpty());
+            const node = self.head.?;
+            var current_head = node;
+            var new_head = current_head.next orelse null;
+            self.head = new_head;
+            self.freeNode(current_head);
+        }
+
+        pub fn removeLast(self: *Self) void {
+            assert(!self.isEmpty());
+            const node = self.head.?;
+            var current_head = node;
+            while (current_head.next) |next_node| : (current_head = next_node) {
+                if (next_node.next == null) {
+                    //becuase the current_head's next is going to be the new end
+                    //and we don't want it refering to the deleted node which is next_node
+                    current_head.next = null;
+                }
+            } else {
                 self.freeNode(current_head);
-            } else {
-                return error.ErrorCannotRemoveFirstNodeOFAnEmptyList;
-            }
-        }
-
-        pub fn removeLast(self: *Self) !void {
-            if (self.head) |node| {
-                var current_head = node;
-                while (current_head.next) |next_node| : (current_head = next_node) {
-                    if (next_node.next == null) {
-                        //becuase the current_head's next is going to be the new end
-                        //and we don't want it refering to the deleted node which is next_node
-                        current_head.next = null;
-                    }
-                } else {
-                    self.freeNode(current_head);
-                }
-            } else {
-                return error.ErrorCannotRemoveLastNodeOfAnEmptyList;
             }
         }
 
         pub fn remove(self: *Self, value: T) !void {
-            if (self.head) |node| {
-                if (node.data == value) {
-                    try self.removeFirst();
-                    return;
-                }
-                var current_head = node;
-                while (current_head.next) |next_node| : (current_head = next_node) {
-                    if (next_node.data == value) {
-                        current_head.next = next_node.next orelse null;
-                        var delete_node = next_node;
-                        self.freeNode(delete_node);
-                        break;
-                    }
-                } else {
-                    return error.ErrorCannotRemoveAValueWhichIsNotInTheList;
+            assert(!self.isEmpty());
+            const node = self.head.?;
+            if (node.data == value) {
+                self.removeFirst();
+                return;
+            }
+            var current_head = node;
+            while (current_head.next) |next_node| : (current_head = next_node) {
+                if (next_node.data == value) {
+                    current_head.next = next_node.next orelse null;
+                    var delete_node = next_node;
+                    self.freeNode(delete_node);
+                    break;
                 }
             } else {
-                return error.ErrorCannotRemoveANodeFromAnEmptyList;
+                return error.ValueNotInList;
             }
         }
 
-        pub fn find(self: *const Self, value: T) !*Node {
-            if (self.head) |node| {
-                if (node.data == value) {
-                    return node;
-                }
-                var current_node = node;
-                while (current_node.next) |next_node| : (current_node = next_node) {
-                    if (next_node.data == value) {
-                        return next_node;
-                    }
-                } else {
-                    return error.ErrorCouldNotFindValueInTheList;
-                }
-            } else {
-                return error.ErrorCannotSearchForAValueInAnEmptyList;
+        pub fn find(self: *const Self, value: T) ?*Node {
+            assert(!self.isEmpty());
+            const node = self.head.?;
+            if (node.data == value) {
+                return node;
             }
+            var current_node = node;
+            while (current_node.next) |next_node| : (current_node = next_node) {
+                if (next_node.data == value) {
+                    return next_node;
+                }
+            }
+            return null;
         }
 
         pub fn deinit(self: *Self) void {
@@ -182,7 +174,7 @@ pub fn SinglyList(comptime T: type) type {
 }
 
 fn debugPrint(comptime message: []const u8, args: anytype) void {
-    std.debug.print("\n" ++ message ++ "\n", .{args});
+    print("\n" ++ message ++ "\n", .{args});
 }
 
 fn display(self: anytype) void {
@@ -205,15 +197,15 @@ fn display(self: anytype) void {
     //     @compileError("head field must be of type " ++ std.meta.declarations(@TypeOf(self))[1].data.Type);
     // }
     if (self.head) |node| {
-        std.debug.print("\n[ head ==> {} ", .{node.data});
+        print("\n[ head ==> {} ", .{node.data});
         var current_head = node;
         while (current_head.next) |next_node| : (current_head = next_node) {
-            std.debug.print("next ==> {} ", .{next_node.data});
+            print("next ==> {} ", .{next_node.data});
         } else {
-            std.debug.print("end ]\n", .{});
+            print("end ]\n", .{});
         }
     } else {
-        std.debug.print("\nList is empty []\n", .{});
+        print("\nList is empty []\n", .{});
     }
 }
 
@@ -231,13 +223,13 @@ test "SinglyList" {
     try expect(singlylist.head.?.next.?.data == 2);
     try singlylist.appendAfter(3, 4);
     try expect(singlylist.head.?.next.?.next.?.next.?.data == 4);
-    try singlylist.removeFirst();
+    singlylist.removeFirst();
     try expect(singlylist.head.?.data == 2);
-    try singlylist.removeLast();
+    singlylist.removeLast();
     try expect(singlylist.head.?.next.?.next.?.next.?.data == 6);
     try singlylist.remove(3);
     try expect(singlylist.head.?.next.?.data == 4);
-    const found_2 = try singlylist.find(2);
+    const found_2 = singlylist.find(2).?;
     try expect(found_2.data == 2);
 }
 
@@ -260,12 +252,12 @@ pub fn SinglyCircularList(comptime T: type) type {
         }
 
         pub fn front(self: Self) T {
-            std.debug.assert(!self.isEmpty());
+            assert(!self.isEmpty());
             return self.cursor.?.next.data;
         }
 
         pub fn back(self: Self) T {
-            std.debug.assert(!self.isEmpty());
+            assert(!self.isEmpty());
             return self.cursor.?.data;
         }
 
@@ -330,13 +322,13 @@ pub fn SinglyCircularList(comptime T: type) type {
         }
 
         pub fn display(self: *Self) void {
-            std.debug.assert(!self.isEmpty());
+            assert(!self.isEmpty());
             var itr = self.iterator();
-            std.debug.print("\n[ front ==> ", .{});
+            print("\n[ front ==> ", .{});
             while (itr.next()) |next_node| {
-                std.debug.print(" |{}| ", .{next_node.data});
+                print(" |{}| ", .{next_node.data});
             }
-            std.debug.print(" <== rear ]\n", .{});
+            print(" <== rear ]\n", .{});
         }
 
         pub fn deinit(self: *Self) void {
@@ -354,17 +346,17 @@ test "SinglyCircularList" {
     try circularlist.prepend(0);
     try circularlist.prepend(1);
     try circularlist.prepend(2);
-    try std.testing.expect(circularlist.front() == 2);
-    try std.testing.expect(circularlist.back() == 0);
+    try expect(circularlist.front() == 2);
+    try expect(circularlist.back() == 0);
     circularlist.display();
     circularlist.advanceCursor();
-    try std.testing.expect(circularlist.front() == 1);
-    try std.testing.expect(circularlist.back() == 2);
+    try expect(circularlist.front() == 1);
+    try expect(circularlist.back() == 2);
     circularlist.display();
     circularlist.advanceCursor();
     circularlist.display();
     try circularlist.prepend(3);
-    try std.testing.expect(circularlist.front() == 3);
+    try expect(circularlist.front() == 3);
     circularlist.display();
 }
 
@@ -420,7 +412,7 @@ pub fn List(comptime T: type) type {
                     return node_with_value;
                 }
             } else {
-                return error.ErrorNoNodeExistInTheListWithTheSpecifiedValue;
+                return error.NoNodeWithSpecifiedValue;
             }
         }
 
@@ -450,6 +442,10 @@ pub fn List(comptime T: type) type {
             }
         }
 
+        fn isEmpty(self: Self) bool {
+            return if (self.head == null) true else false;
+        }
+
         pub fn prepend(self: *Self, value: T) !void {
             if (self.head) |node| {
                 var new_node = try self.createNode(value);
@@ -458,24 +454,22 @@ pub fn List(comptime T: type) type {
                 self.head = new_node;
                 self.size += 1;
             } else {
-                return error.ErrorCannotPrependValueToAnEmptyList;
+                try self.append(value);
             }
         }
 
         pub fn prependBefore(self: *Self, before: T, value: T) !void {
-            if (self.head) |node| {
-                if (node.data == before) {
-                    try self.prepend(value);
-                }
-                var node_with_value = try traverseTo(node, before);
-                var new_node = try self.createNode(value);
-                new_node.next = node_with_value;
-                new_node.previous = node_with_value.previous;
-                node_with_value.previous.?.next = new_node;
-                node_with_value.previous = new_node;
-            } else {
-                return error.ErrorCannotPrependValueBeforeAnEmptyList;
+            assert(!self.isEmpty());
+            const node = self.head.?;
+            if (node.data == before) {
+                try self.prepend(value);
             }
+            var node_with_value = try traverseTo(node, before);
+            var new_node = try self.createNode(value);
+            new_node.next = node_with_value;
+            new_node.previous = node_with_value.previous;
+            node_with_value.previous.?.next = new_node;
+            node_with_value.previous = new_node;
         }
 
         pub fn find(self: *Self, value: T) ?*Node {
@@ -485,49 +479,43 @@ pub fn List(comptime T: type) type {
             return null;
         }
 
-        pub fn removeFirst(self: *Self) !void {
-            if (self.head) |node| {
-                var current_head = node;
-                if (current_head.next) |next_head| {
-                    var new_head = next_head;
-                    new_head.previous = null;
-                    self.head = new_head;
-                } else {
-                    //if after removing the current_head there are no more nodes
-                    self.head = null;
-                    self.tail = null;
-                }
-                self.freeNode(current_head);
+        pub fn removeFirst(self: *Self) void {
+            assert(!self.isEmpty());
+            var current_head = self.head.?;
+            if (current_head.next) |next_head| {
+                var new_head = next_head;
+                new_head.previous = null;
+                self.head = new_head;
             } else {
-                return error.ErrorCannotRemoveFirstNodeOFAnEmptyList;
+                //if after removing the current_head there are no more nodes
+                self.head = null;
+                self.tail = null;
             }
+            self.freeNode(current_head);
         }
 
-        pub fn removeLast(self: *Self) !void {
-            if (self.tail) |node| {
-                var current_tail = node;
-                var new_tail = current_tail.previous;
-                current_tail.previous.?.next = null;
-                self.tail = new_tail;
-                self.freeNode(current_tail);
-            } else {
-                return error.ErrorCannotRemoveANonExistingTail;
-            }
+        pub fn removeLast(self: *Self) void {
+            var current_tail = self.tail.?;
+            var new_tail = current_tail.previous;
+            current_tail.previous.?.next = null;
+            self.tail = new_tail;
+            self.freeNode(current_tail);
         }
 
         pub fn remove(self: *Self, value: T) !void {
-            if (self.head) |node| {
-                const remove_node = try traverseTo(node, value);
-                var node_to_remove = remove_node;
-                node_to_remove.previous.?.next = remove_node.next;
-                node_to_remove.next.?.previous = remove_node.previous;
-                self.freeNode(remove_node);
-            }
+            assert(!self.isEmpty());
+            const node = self.head.?;
+            const remove_node = try traverseTo(node, value);
+            var node_to_remove = remove_node;
+            node_to_remove.previous.?.next = remove_node.next;
+            node_to_remove.next.?.previous = remove_node.previous;
+            self.freeNode(remove_node);
         }
 
         fn freeNode(self: *Self, memory: anytype) void {
             self.allocator.destroy(memory);
         }
+
         pub fn deinit(self: *Self) void {
             while (self.tail) |node| {
                 self.tail = node.previous;
@@ -542,7 +530,6 @@ pub fn List(comptime T: type) type {
 test "List" {
     var list = List(u8).init(std.testing.allocator);
     defer list.deinit();
-    try std.testing.expectError(error.ErrorCannotPrependValueToAnEmptyList, list.prepend(1));
     try list.append(2);
     try list.append(4);
     try expect(list.head.?.data == 2);
@@ -559,11 +546,14 @@ test "List" {
     try expect(list.tail.?.data == 6);
     const found_data = list.find(3);
     try expect(found_data.?.data == 3);
-    try list.removeFirst();
+    list.removeFirst();
     try expect(list.head.?.data == 2);
-    try list.removeLast();
+    list.removeLast();
     try expect(list.tail.?.data == 5);
     try list.remove(4);
     const find_4 = list.find(4);
     try expect(find_4 == null);
+    try list.prepend(1);
+    try expect(list.head.?.data == 1);
+    try expect(list.tail.?.data == 5);
 }
