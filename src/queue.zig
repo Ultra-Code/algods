@@ -17,8 +17,8 @@ pub fn Queue(comptime T: type) type {
             try self.data.append(value);
         }
 
-        pub fn dequeue(self: *Self) !void {
-            self.data.removeFirst() catch return error.ErrorCannotDequeueAnEmptyQueue;
+        pub fn dequeue(self: *Self) void {
+            self.data.removeFirst();
         }
 
         pub fn peek(self: Self) ?T {
@@ -38,12 +38,11 @@ test "Queue" {
 
     try queue.enqueue(0);
     try std.testing.expect(queue.peek().? == 0);
-    try queue.dequeue();
-    try std.testing.expectError(error.ErrorCannotDequeueAnEmptyQueue, queue.dequeue());
+    queue.dequeue();
     try std.testing.expect(queue.peek() == null);
 }
 
-//REFERENCE_IMPLE: https://towardsdatascience.com/circular-queue-or-ring-buffer-92c7b0193326
+//REFERENCE_IMPL: https://towardsdatascience.com/circular-queue-or-ring-buffer-92c7b0193326
 ///A circular queue or ring buffer is essentially a queue with a maximum size or
 ///capacity which will continue to loop back over itself in a circular motion
 //NOTE: RingBuffer could also use a circular linkded list as it backing container
@@ -52,8 +51,8 @@ fn RingBuffer(comptime T: type, comptime capacity: usize) type {
         const Self = @This();
         allocator: std.mem.Allocator,
         data: []T,
-        rear_index: usize = std.math.maxInt(usize), // maxInt conpensates for +1 so that first insertion is at 0
-        front_index: usize = 0,
+        insert_index: usize = 0, // index for enqueuing or insertion
+        front_index: usize = 0, //index of first element
         size: usize = 0,
 
         pub fn init(allocator: std.mem.Allocator) Self {
@@ -68,10 +67,10 @@ fn RingBuffer(comptime T: type, comptime capacity: usize) type {
                 return error.RingBufferOverflow;
             }
 
-            self.size += 1;
             //wrap around to index 0 after reaching capacity
-            self.rear_index = (self.rear_index +% 1) % capacity;
-            self.data[self.rear_index] = value;
+            self.data[self.insert_index] = value;
+            self.insert_index = (self.insert_index + 1) % capacity;
+            self.size += 1;
         }
 
         pub fn dequeue(self: *Self) !T {
@@ -89,7 +88,9 @@ fn RingBuffer(comptime T: type, comptime capacity: usize) type {
         }
 
         pub fn peekEnd(self: Self) T {
-            return self.data[self.rear_index];
+            //we have to -1 because the insert_index refers to the location for the next insertion
+            //so to get the last insertion we look back one step
+            return self.data[self.insert_index - 1];
         }
 
         pub fn display(self: Self) void {
@@ -97,7 +98,7 @@ fn RingBuffer(comptime T: type, comptime capacity: usize) type {
             var index = self.front_index;
             var counter: usize = 0;
             std.debug.print("\n-->", .{});
-            while (counter < capacity) : ({
+            while (counter < self.size) : ({
                 counter += 1;
                 index = (index + 1) % capacity;
             }) {
@@ -130,4 +131,6 @@ test "RingBuffer" {
     try ringbuffer.enqueue(8);
     try std.testing.expect(ringbuffer.peekFront() == 3);
     try std.testing.expect(ringbuffer.peekEnd() == 8);
+    _ = try ringbuffer.dequeue();
+    try std.testing.expect(ringbuffer.peekFront() == 4);
 }
