@@ -1,8 +1,6 @@
 const std = @import("std");
 const expect = std.testing.expect;
 
-//TODO: if need be implement a Circular Doubly linked list
-
 pub fn SinglyList(comptime T: type) type {
     return struct {
         const Self = @This();
@@ -182,6 +180,7 @@ pub fn SinglyList(comptime T: type) type {
         }
     };
 }
+
 fn debugPrint(comptime message: []const u8, args: anytype) void {
     std.debug.print("\n" ++ message ++ "\n", .{args});
 }
@@ -219,31 +218,157 @@ fn display(self: anytype) void {
 }
 
 test "SinglyList" {
-    const List = SinglyList(u8);
-    var list = List.init(std.testing.allocator);
-    defer list.deinit();
-    try list.append(3);
-    try expect(list.head.?.data == 3);
-    try list.append(6);
-    try list.append(9);
-    try expect(list.head.?.next.?.next.?.data == 9);
-    try list.prepend(1);
-    try expect(list.head.?.data == 1);
-    try list.prependBefore(3, 2);
-    try expect(list.head.?.next.?.data == 2);
-    try list.appendAfter(3, 4);
-    try expect(list.head.?.next.?.next.?.next.?.data == 4);
-    try list.removeFirst();
-    try expect(list.head.?.data == 2);
-    try list.removeLast();
-    try expect(list.head.?.next.?.next.?.next.?.data == 6);
-    try list.remove(3);
-    try expect(list.head.?.next.?.data == 4);
-    const found_2 = try list.find(2);
+    var singlylist = SinglyList(u8).init(std.testing.allocator);
+    defer singlylist.deinit();
+    try singlylist.append(3);
+    try expect(singlylist.head.?.data == 3);
+    try singlylist.append(6);
+    try singlylist.append(9);
+    try expect(singlylist.head.?.next.?.next.?.data == 9);
+    try singlylist.prepend(1);
+    try expect(singlylist.head.?.data == 1);
+    try singlylist.prependBefore(3, 2);
+    try expect(singlylist.head.?.next.?.data == 2);
+    try singlylist.appendAfter(3, 4);
+    try expect(singlylist.head.?.next.?.next.?.next.?.data == 4);
+    try singlylist.removeFirst();
+    try expect(singlylist.head.?.data == 2);
+    try singlylist.removeLast();
+    try expect(singlylist.head.?.next.?.next.?.next.?.data == 6);
+    try singlylist.remove(3);
+    try expect(singlylist.head.?.next.?.data == 4);
+    const found_2 = try singlylist.find(2);
     try expect(found_2.data == 2);
 }
 
-pub fn DoublyList(comptime T: type) type {
+pub fn SinglyCircularList(comptime T: type) type {
+    return struct {
+        const Self = @This();
+        const Node = struct {
+            data: T,
+            next: *Node,
+        };
+        allocator: std.mem.Allocator,
+        cursor: ?*Node = null, //cursor points to the last node so that the next is the frist node
+
+        pub fn init(allocator: std.mem.Allocator) Self {
+            return .{ .allocator = allocator };
+        }
+
+        fn isEmpty(self: Self) bool {
+            return if (self.cursor == null) true else false;
+        }
+
+        pub fn front(self: Self) T {
+            std.debug.assert(!self.isEmpty());
+            return self.cursor.?.next.data;
+        }
+
+        pub fn back(self: Self) T {
+            std.debug.assert(!self.isEmpty());
+            return self.cursor.?.data;
+        }
+
+        pub const Iterator = struct {
+            list: *SinglyCircularList(T),
+            end: *Node,
+            state: enum { stop, move } = .move,
+
+            pub fn next(it: *Iterator) ?*Node {
+                if (it.state == .stop) {
+                    return null;
+                }
+                it.list.advanceCursor();
+                if (it.end == it.list.cursor.?) {
+                    //This is needed because cursor points to the end for facilitating getting both end and first
+                    //circle around back to end then set the stop state so the next iteration is prevented
+                    if (it.state == .move) {
+                        it.state = .stop;
+                        return it.list.cursor;
+                    }
+                }
+                return it.list.cursor;
+            }
+
+            pub fn reset(it: *Iterator) void {
+                it.list.cursor = it.end;
+            }
+        };
+
+        pub fn iterator(self: *Self) Iterator {
+            return .{ .list = self, .end = self.cursor.? };
+        }
+
+        fn advanceCursor(self: *Self) void {
+            self.cursor = self.cursor.?.next;
+        }
+
+        pub fn prepend(self: *Self, value: T) !void {
+            var new_node = try self.allocator.create(Node);
+            new_node.data = value;
+
+            if (!self.isEmpty()) {
+                var current_cursor = self.cursor.?;
+                new_node.next = current_cursor.next;
+                current_cursor.next = new_node;
+            } else {
+                new_node.next = new_node;
+                self.cursor = new_node;
+            }
+        }
+
+        pub fn remove(self: *Self) void {
+            var remove_node = self.cursor.?.next;
+            if (remove_node == self.cursor) {
+                // removing the only node so that list is empty
+                self.cursor = null;
+            } else {
+                // link out the old node
+                self.cursor.?.next = remove_node.next;
+            }
+            self.allocator.destroy(remove_node);
+        }
+
+        pub fn display(self: *Self) void {
+            std.debug.assert(!self.isEmpty());
+            var itr = self.iterator();
+            std.debug.print("\n[ front ==> ", .{});
+            while (itr.next()) |next_node| {
+                std.debug.print(" |{}| ", .{next_node.data});
+            }
+            std.debug.print(" <== rear ]\n", .{});
+        }
+
+        pub fn deinit(self: *Self) void {
+            while (!self.isEmpty()) {
+                self.remove();
+            }
+        }
+    };
+}
+
+test "SinglyCircularList" {
+    var circularlist = SinglyCircularList(u8).init(std.testing.allocator);
+    defer circularlist.deinit();
+
+    try circularlist.prepend(0);
+    try circularlist.prepend(1);
+    try circularlist.prepend(2);
+    try std.testing.expect(circularlist.front() == 2);
+    try std.testing.expect(circularlist.back() == 0);
+    circularlist.display();
+    circularlist.advanceCursor();
+    try std.testing.expect(circularlist.front() == 1);
+    try std.testing.expect(circularlist.back() == 2);
+    circularlist.display();
+    circularlist.advanceCursor();
+    circularlist.display();
+    try circularlist.prepend(3);
+    try std.testing.expect(circularlist.front() == 3);
+    circularlist.display();
+}
+
+pub fn List(comptime T: type) type {
     return struct {
         const Self = @This();
         const Node = struct {
@@ -280,10 +405,6 @@ pub fn DoublyList(comptime T: type) type {
                 new_node.previous = tail_node;
                 new_node.next = null;
                 tail_node.next = new_node;
-            } else if (self.head) |node| {
-                var current_end = traverseToEnd(node);
-                current_end.next = new_node;
-                new_node.previous = current_end;
             } else {
                 self.head = new_node;
             }
@@ -418,9 +539,8 @@ pub fn DoublyList(comptime T: type) type {
     };
 }
 
-test "DoublyList" {
-    const List = DoublyList(u8);
-    var list = List.init(std.testing.allocator);
+test "List" {
+    var list = List(u8).init(std.testing.allocator);
     defer list.deinit();
     try std.testing.expectError(error.ErrorCannotPrependValueToAnEmptyList, list.prepend(1));
     try list.append(2);
