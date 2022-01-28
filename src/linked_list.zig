@@ -348,16 +348,12 @@ test "SinglyCircularList" {
     try circularlist.prepend(2);
     try expect(circularlist.front() == 2);
     try expect(circularlist.back() == 0);
-    circularlist.display();
     circularlist.advanceCursor();
     try expect(circularlist.front() == 1);
     try expect(circularlist.back() == 2);
-    circularlist.display();
     circularlist.advanceCursor();
-    circularlist.display();
     try circularlist.prepend(3);
     try expect(circularlist.front() == 3);
-    circularlist.display();
 }
 
 pub fn List(comptime T: type) type {
