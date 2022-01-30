@@ -2,7 +2,7 @@ const std = @import("std");
 const list = @import("linked_list.zig");
 
 //TODO: If need by implement Deque
-
+///A queue .ie a FIFO data structure
 pub fn Queue(comptime T: type) type {
     return struct {
         const ListType = list.SinglyList(T);
@@ -46,7 +46,7 @@ test "Queue" {
 ///A circular queue or ring buffer is essentially a queue with a maximum size or
 ///capacity which will continue to loop back over itself in a circular motion
 //NOTE: RingBuffer could also use a circular linkded list as it backing container
-fn RingBuffer(comptime T: type, comptime capacity: usize) type {
+pub fn RingBuffer(comptime T: type, comptime capacity: usize) type {
     return struct {
         const Self = @This();
         allocator: std.mem.Allocator,

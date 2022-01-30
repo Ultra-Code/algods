@@ -1,6 +1,7 @@
 const std = @import("std");
 
 //NOTE: Also implement a ComptimeStack backed by a static array
+///A stack .ie LIFO data structure
 fn Stack(comptime T: type) type {
     return struct {
         const Self = @This();

@@ -3,13 +3,58 @@ const expect = std.testing.expect;
 const assert = std.debug.assert;
 const print = std.debug.print;
 
+///A singly linked list
 pub fn SinglyList(comptime T: type) type {
     return struct {
         const Self = @This();
-        const Node = struct {
+        pub const Node = struct {
             data: T,
             next: ?*Node,
         };
+
+        pub const Iterator = struct {
+            head: ?*Node,
+            cursor: ?*Node,
+
+            pub fn next(it: *Iterator) ?*Node {
+                if (it.cursor) |current_node| {
+                    it.advancePointer();
+                    return current_node;
+                }
+                return null;
+            }
+
+            pub fn reset(it: *Iterator) void {
+                it.cursor = it.head;
+            }
+
+            fn advancePointer(it: *Iterator) void {
+                // self.cursor = self.cursor.?.next;
+                it.cursor = it.cursor.?.next;
+            }
+
+            pub fn position(it: *Iterator, index: usize) ?*Node {
+                var count: usize = 0;
+                //index - 1 because were are zero counting
+                while (count < index - 1) : (count += 1) {
+                    it.advancePointer();
+                }
+                if (it.cursor) |cursor| {
+                    //reset it.cursor so that next call to position() starts from cursor
+                    it.reset();
+                    return cursor;
+                } else {
+                    return null;
+                }
+            }
+        };
+
+        ///iterator takes const Self so that it doesn't modify the actual data structure
+        ///when changes are made to the data structure you need to call iterator again
+        ///for a new Iterator that contains the canges made to the data structure
+        pub fn iterator(self: Self) Iterator {
+            return .{ .head = self.head, .cursor = self.head };
+        }
 
         head: ?*Node = null,
         allocator: std.mem.Allocator,
@@ -29,134 +74,94 @@ pub fn SinglyList(comptime T: type) type {
             return if (self.head == null) true else false;
         }
 
+        ///Traverse list in linear time to the end and append value
         pub fn append(self: *Self, value: T) !void {
             var new_node = try self.createNode(value);
             //if head alread has some nodes traverse to insert position
             if (self.head) |node| {
                 var head_node = node;
                 while (head_node.next) |next_head| : (head_node = next_head) {} else {
+                    //add new_node as the next node of the last node
                     head_node.next = new_node;
+                    new_node.next = null;
                 }
             } else {
                 //if new_node is the first node then head points to the new_node
                 self.head = new_node;
+                new_node.next = null;
             }
         }
 
-        pub fn appendAfter(self: *Self, after: T, value: T) !void {
+        pub fn appendAfter(self: *Self, index: usize, value: T) !void {
             assert(!self.isEmpty());
-            const node = self.head.?;
-            var current_head = node;
-            if (node.data == after) {
-                var new_node = try self.createNode(value);
+
+            var it = self.iterator();
+            var node_at_index = it.position(index).?;
+
+            const head = self.head.?;
+            var current_head = head;
+
+            var new_node = try self.createNode(value);
+            if (head == node_at_index) {
                 new_node.next = current_head.next orelse null;
                 current_head.next = new_node;
                 return;
             }
-            while (current_head.next) |next_node| : (current_head = next_node) {
-                if (next_node.data == after) {
-                    var new_node = try self.createNode(value);
-                    new_node.next = next_node.next orelse null;
-                    var current_node = next_node;
-                    current_node.next = new_node;
-                    break;
-                }
-            } else {
-                std.log.err("The value of after {} doesn't exist in the list", .{after});
-                return error.ValueNotInList;
-            }
+
+            new_node.next = node_at_index.next orelse null;
+            node_at_index.next = new_node;
         }
 
         pub fn prepend(self: *Self, value: T) !void {
             var new_node = try self.createNode(value);
-            var head = self.head orelse {
-                return try self.append(value);
-            };
-            //put new node before head
-            new_node.next = head;
-            //if a node goes before head ,then head has to be updated to point to the beginning of the list
-            //let head point to new_node since new_node is at the beginning of the list
-            self.head = new_node;
+            if (self.head) |head| {
+                //put new node before head
+                new_node.next = head;
+                //if a node goes before head ,then head has to be updated to point to the beginning of the list
+                //let head point to new_node since new_node is at the beginning of the list
+                self.head = new_node;
+            } else {
+                //when list is empty
+                new_node.next = null;
+                self.head = new_node;
+            }
         }
 
-        pub fn prependBefore(self: *Self, before: T, value: T) !void {
+        pub fn prependBefore(self: *Self, index: usize, value: T) !void {
             assert(!self.isEmpty());
-            const node = self.head.?;
-            if (node.data == before) {
-                try self.prepend(value);
+            var it = self.iterator();
+            var node_before_index = it.position(index - 1).?;
+
+            const head = self.head.?;
+            var current_head = head;
+
+            var new_node = try self.createNode(value);
+            if (current_head == node_before_index) {
+                new_node.next = current_head.next;
+                current_head.next = new_node;
                 return;
             }
-            var current_head = node;
-            while (current_head.next) |next_node| : (current_head = next_node) {
-                if (next_node.data == before) {
-                    var new_node = try self.createNode(value);
-                    new_node.next = next_node;
-                    current_head.next = new_node;
-                    break;
-                }
-            } else {
-                std.log.err("The value of before {} doesn't exist in the list", .{before});
-                return error.ValueNotInList;
-            }
+
+            new_node.next = node_before_index.next;
+            node_before_index.next = new_node;
         }
 
         pub fn removeFirst(self: *Self) void {
             assert(!self.isEmpty());
-            const node = self.head.?;
-            var current_head = node;
+            var current_head = self.head.?;
             var new_head = current_head.next orelse null;
             self.head = new_head;
             self.freeNode(current_head);
         }
 
-        pub fn removeLast(self: *Self) void {
+        pub fn remove(self: *Self, index: usize) void {
             assert(!self.isEmpty());
-            const node = self.head.?;
-            var current_head = node;
-            while (current_head.next) |next_node| : (current_head = next_node) {
-                if (next_node.next == null) {
-                    //becuase the current_head's next is going to be the new end
-                    //and we don't want it refering to the deleted node which is next_node
-                    current_head.next = null;
-                }
-            } else {
-                self.freeNode(current_head);
-            }
-        }
+            var it = self.iterator();
+            var node_before_delete_node = it.position(index - 1).?;
+            const delete_node = node_before_delete_node.next.?;
 
-        pub fn remove(self: *Self, value: T) !void {
-            assert(!self.isEmpty());
-            const node = self.head.?;
-            if (node.data == value) {
-                self.removeFirst();
-                return;
-            }
-            var current_head = node;
-            while (current_head.next) |next_node| : (current_head = next_node) {
-                if (next_node.data == value) {
-                    current_head.next = next_node.next orelse null;
-                    var delete_node = next_node;
-                    self.freeNode(delete_node);
-                    break;
-                }
-            } else {
-                return error.ValueNotInList;
-            }
-        }
-
-        pub fn find(self: *const Self, value: T) ?*Node {
-            assert(!self.isEmpty());
-            const node = self.head.?;
-            if (node.data == value) {
-                return node;
-            }
-            var current_node = node;
-            while (current_node.next) |next_node| : (current_node = next_node) {
-                if (next_node.data == value) {
-                    return next_node;
-                }
-            }
-            return null;
+            node_before_delete_node.next = delete_node.next;
+            self.freeNode(delete_node);
         }
 
         pub fn deinit(self: *Self) void {
@@ -219,27 +224,102 @@ test "SinglyList" {
     try expect(singlylist.head.?.next.?.next.?.data == 9);
     try singlylist.prepend(1);
     try expect(singlylist.head.?.data == 1);
-    try singlylist.prependBefore(3, 2);
+    try singlylist.prependBefore(2, 2);
     try expect(singlylist.head.?.next.?.data == 2);
     try singlylist.appendAfter(3, 4);
     try expect(singlylist.head.?.next.?.next.?.next.?.data == 4);
     singlylist.removeFirst();
     try expect(singlylist.head.?.data == 2);
-    singlylist.removeLast();
+    singlylist.remove(5);
     try expect(singlylist.head.?.next.?.next.?.next.?.data == 6);
-    try singlylist.remove(3);
-    try expect(singlylist.head.?.next.?.data == 4);
-    const found_2 = singlylist.find(2).?;
-    try expect(found_2.data == 2);
+
+    //test iterator
+
+    var it = singlylist.iterator();
+    // debugPrint("SinglyList{}", .{});
+    // while (it.next()) |node| {
+    //     debugPrint("node -> {}", .{node.data});
+    // }
+
+    // display(singlylist);
+    try expect(it.position(2).?.data == 3);
+    try singlylist.prepend(0);
+    it = singlylist.iterator();
+    try expect(it.position(1).?.data == 0);
+    try expect(it.position(6) == null);
 }
 
+//TODO: if and when needed implement appendAfter/prependBefore/remove
+///A circular singly linked list
 pub fn SinglyCircularList(comptime T: type) type {
     return struct {
         const Self = @This();
-        const Node = struct {
+        pub const Node = struct {
             data: T,
             next: *Node,
         };
+
+        pub const Iterator = struct {
+            cursor: ?*Node,
+            end: ?*Node,
+            state: enum { stop, move } = .move,
+
+            pub fn next(it: *Iterator) ?*Node {
+                if (it.state == .stop or it.cursor == null) {
+                    return null;
+                }
+
+                it.advanceCursor();
+                if (it.cursor == it.end) {
+                    //stop looping because we started at the end and have gotten there again
+                    it.state = .stop;
+                    return it.end;
+                }
+                return it.cursor;
+            }
+
+            pub fn reset(it: *Iterator) void {
+                it.cursor = it.end;
+            }
+            pub fn rotate(it: *Iterator) ?*Node {
+                return it.circleList(true);
+            }
+
+            fn circleList(it: *Iterator, keep_rotating: bool) ?*Node {
+                if (keep_rotating == false) {
+                    return null;
+                }
+                //Since cursor starst at the end move to the head before retreiving cursor
+                it.advanceCursor();
+                return it.cursor;
+            }
+
+            fn advanceCursor(it: *Iterator) void {
+                it.cursor = it.cursor.?.next;
+            }
+
+            pub fn position(it: *Iterator, index: usize) ?*Node {
+                var count: usize = 0;
+                while (count < index) : (count += 1) {
+                    it.advanceCursor();
+                }
+                if (it.cursor) |cursor| {
+                    //reset it.cursor so that next call to position() starts from cursor
+                    it.reset();
+                    return cursor;
+                } else {
+                    return null;
+                }
+            }
+        };
+
+        ///iterator takes const Self so that it doesn't modify the actual data structure
+        ///when changes are made to the data structure you need to call iterator again
+        ///for a new Iterator that contains the canges made to the data structure
+        pub fn iterator(self: Self) Iterator {
+            return .{ .cursor = self.cursor, .end = self.cursor };
+        }
+
         allocator: std.mem.Allocator,
         cursor: ?*Node = null, //cursor points to the last node so that the next is the frist node
 
@@ -261,38 +341,8 @@ pub fn SinglyCircularList(comptime T: type) type {
             return self.cursor.?.data;
         }
 
-        pub const Iterator = struct {
-            list: *SinglyCircularList(T),
-            end: *Node,
-            state: enum { stop, move } = .move,
-
-            pub fn next(it: *Iterator) ?*Node {
-                if (it.state == .stop) {
-                    return null;
-                }
-                it.list.advanceCursor();
-                if (it.end == it.list.cursor.?) {
-                    //This is needed because cursor points to the end for facilitating getting both end and first
-                    //circle around back to end then set the stop state so the next iteration is prevented
-                    if (it.state == .move) {
-                        it.state = .stop;
-                        return it.list.cursor;
-                    }
-                }
-                return it.list.cursor;
-            }
-
-            pub fn reset(it: *Iterator) void {
-                it.list.cursor = it.end;
-            }
-        };
-
-        pub fn iterator(self: *Self) Iterator {
-            return .{ .list = self, .end = self.cursor.? };
-        }
-
-        fn advanceCursor(self: *Self) void {
-            self.cursor = self.cursor.?.next;
+        pub fn advanceCursor(it: *Self) void {
+            it.cursor = it.cursor.?.next;
         }
 
         pub fn prepend(self: *Self, value: T) !void {
@@ -304,12 +354,28 @@ pub fn SinglyCircularList(comptime T: type) type {
                 new_node.next = current_cursor.next;
                 current_cursor.next = new_node;
             } else {
+                //If there is no node in the list
                 new_node.next = new_node;
                 self.cursor = new_node;
             }
         }
 
-        pub fn remove(self: *Self) void {
+        pub fn append(self: *Self, value: T) !void {
+            if (!self.isEmpty()) {
+                var new_node = try self.allocator.create(Node);
+                new_node.data = value;
+
+                var current_node = self.cursor.?;
+                new_node.next = current_node.next;
+                current_node.next = new_node;
+                //cursor should point to the last node
+                self.cursor = new_node;
+            } else {
+                try self.prepend(value);
+            }
+        }
+
+        pub fn removeFirst(self: *Self) void {
             var remove_node = self.cursor.?.next;
             if (remove_node == self.cursor) {
                 // removing the only node so that list is empty
@@ -333,7 +399,7 @@ pub fn SinglyCircularList(comptime T: type) type {
 
         pub fn deinit(self: *Self) void {
             while (!self.isEmpty()) {
-                self.remove();
+                self.removeFirst();
             }
         }
     };
@@ -354,6 +420,22 @@ test "SinglyCircularList" {
     circularlist.advanceCursor();
     try circularlist.prepend(3);
     try expect(circularlist.front() == 3);
+    try expect(circularlist.back() == 1);
+    try circularlist.append(9);
+    try expect(circularlist.back() == 9);
+
+    //test displaying and iterating over SinglyCircularList
+
+    // circularlist.display();
+    var it = circularlist.iterator();
+    try expect(it.position(2).?.data == 0);
+    try expect(it.position(4).?.data == 1);
+
+    // var count: usize = 0;
+    // while (it.rotate()) |node| : (count += 1) {
+    //     debugPrint("node {}", .{node.data});
+    //     if (count == 10) break;
+    // }
 }
 
 pub fn List(comptime T: type) type {
