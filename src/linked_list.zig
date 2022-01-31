@@ -7,7 +7,7 @@ const print = std.debug.print;
 pub fn SinglyList(comptime T: type) type {
     return struct {
         const Self = @This();
-        pub const Node = struct {
+        const Node = struct {
             data: T,
             next: ?*Node,
         };
@@ -15,11 +15,12 @@ pub fn SinglyList(comptime T: type) type {
         pub const Iterator = struct {
             head: ?*Node,
             cursor: ?*Node,
+            size: usize,
 
-            pub fn next(it: *Iterator) ?*Node {
+            pub fn next(it: *Iterator) ?T {
                 if (it.cursor) |current_node| {
                     it.advancePointer();
-                    return current_node;
+                    return current_node.data;
                 }
                 return null;
             }
@@ -33,9 +34,14 @@ pub fn SinglyList(comptime T: type) type {
                 it.cursor = it.cursor.?.next;
             }
 
-            pub fn position(it: *Iterator, index: usize) ?*Node {
+            ///position returns the Node at a given index.
+            ///The index parameter is an integer value greater than 0 .ie index >= 1
+            fn position(it: *Iterator, index: usize) ?*Node {
+                //it.size + 1 to account for the end .ie null case
+                const end = it.size + 1;
+                assert(index > 0 and index <= end);
                 var count: usize = 0;
-                //index - 1 because were are zero counting
+                //index - 1 because we're are zero counting
                 while (count < index - 1) : (count += 1) {
                     it.advancePointer();
                 }
@@ -49,15 +55,16 @@ pub fn SinglyList(comptime T: type) type {
             }
         };
 
+        head: ?*Node = null,
+        allocator: std.mem.Allocator,
+        size: usize = 0,
+
         ///iterator takes const Self so that it doesn't modify the actual data structure
         ///when changes are made to the data structure you need to call iterator again
         ///for a new Iterator that contains the canges made to the data structure
         pub fn iterator(self: Self) Iterator {
-            return .{ .head = self.head, .cursor = self.head };
+            return .{ .head = self.head, .cursor = self.head, .size = self.size };
         }
-
-        head: ?*Node = null,
-        allocator: std.mem.Allocator,
 
         pub fn init(allocator: std.mem.Allocator) Self {
             return .{ .allocator = allocator };
@@ -72,6 +79,14 @@ pub fn SinglyList(comptime T: type) type {
 
         fn isEmpty(self: Self) bool {
             return if (self.head == null) true else false;
+        }
+
+        fn increaseSize(self: *Self) void {
+            self.size += 1;
+        }
+
+        fn decreaseSize(self: *Self) void {
+            self.size -= 1;
         }
 
         ///Traverse list in linear time to the end and append value
@@ -90,6 +105,7 @@ pub fn SinglyList(comptime T: type) type {
                 self.head = new_node;
                 new_node.next = null;
             }
+            self.increaseSize();
         }
 
         pub fn appendAfter(self: *Self, index: usize, value: T) !void {
@@ -98,18 +114,11 @@ pub fn SinglyList(comptime T: type) type {
             var it = self.iterator();
             var node_at_index = it.position(index).?;
 
-            const head = self.head.?;
-            var current_head = head;
-
             var new_node = try self.createNode(value);
-            if (head == node_at_index) {
-                new_node.next = current_head.next orelse null;
-                current_head.next = new_node;
-                return;
-            }
 
             new_node.next = node_at_index.next orelse null;
             node_at_index.next = new_node;
+            self.increaseSize();
         }
 
         pub fn prepend(self: *Self, value: T) !void {
@@ -125,6 +134,7 @@ pub fn SinglyList(comptime T: type) type {
                 new_node.next = null;
                 self.head = new_node;
             }
+            self.increaseSize();
         }
 
         pub fn prependBefore(self: *Self, index: usize, value: T) !void {
@@ -132,18 +142,12 @@ pub fn SinglyList(comptime T: type) type {
             var it = self.iterator();
             var node_before_index = it.position(index - 1).?;
 
-            const head = self.head.?;
-            var current_head = head;
-
             var new_node = try self.createNode(value);
-            if (current_head == node_before_index) {
-                new_node.next = current_head.next;
-                current_head.next = new_node;
-                return;
-            }
 
             new_node.next = node_before_index.next;
             node_before_index.next = new_node;
+
+            self.increaseSize();
         }
 
         pub fn removeFirst(self: *Self) void {
@@ -152,6 +156,7 @@ pub fn SinglyList(comptime T: type) type {
             var new_head = current_head.next orelse null;
             self.head = new_head;
             self.freeNode(current_head);
+            self.decreaseSize();
         }
 
         pub fn remove(self: *Self, index: usize) void {
@@ -162,6 +167,7 @@ pub fn SinglyList(comptime T: type) type {
 
             node_before_delete_node.next = delete_node.next;
             self.freeNode(delete_node);
+            self.decreaseSize();
         }
 
         pub fn deinit(self: *Self) void {
@@ -170,6 +176,7 @@ pub fn SinglyList(comptime T: type) type {
                 self.allocator.destroy(delete_head);
             }
             self.head = undefined;
+            self.size = 0;
         }
 
         fn freeNode(self: *Self, node: *Node) void {
@@ -254,7 +261,7 @@ test "SinglyList" {
 pub fn SinglyCircularList(comptime T: type) type {
     return struct {
         const Self = @This();
-        pub const Node = struct {
+        const Node = struct {
             data: T,
             next: *Node,
         };
@@ -264,41 +271,50 @@ pub fn SinglyCircularList(comptime T: type) type {
             end: ?*Node,
             state: enum { stop, move } = .move,
 
-            pub fn next(it: *Iterator) ?*Node {
+            pub fn next(it: *Iterator) ?T {
                 if (it.state == .stop or it.cursor == null) {
+                    //reset Iterator so the next call to next() works .ie begin a new iteration
+                    it.reset();
                     return null;
                 }
 
                 it.advanceCursor();
                 if (it.cursor == it.end) {
                     //stop looping because we started at the end and have gotten there again
-                    it.state = .stop;
-                    return it.end;
+                    it.stop();
+                    return it.end.?.data;
                 }
-                return it.cursor;
+                return it.cursor.?.data;
+            }
+
+            pub fn stop(it: *Iterator) void {
+                it.state = .stop;
             }
 
             pub fn reset(it: *Iterator) void {
                 it.cursor = it.end;
-            }
-            pub fn rotate(it: *Iterator) ?*Node {
-                return it.circleList(true);
+                it.state = .move;
             }
 
-            fn circleList(it: *Iterator, keep_rotating: bool) ?*Node {
-                if (keep_rotating == false) {
+            ///rotate/circulate the circular list endlessly
+            ///call stop() if you want to stop rotating
+            pub fn rotate(it: *Iterator) ?T {
+                if (it.state == .stop or it.cursor == null) {
+                    //reset Iterator so the next call to rotate works
+                    it.reset();
                     return null;
                 }
                 //Since cursor starst at the end move to the head before retreiving cursor
                 it.advanceCursor();
-                return it.cursor;
+                return it.cursor.?.data;
             }
 
             fn advanceCursor(it: *Iterator) void {
                 it.cursor = it.cursor.?.next;
             }
 
-            pub fn position(it: *Iterator, index: usize) ?*Node {
+            fn position(it: *Iterator, index: usize) ?*Node {
+                //circular doesn't need to assert index <= end because there is no end
                 var count: usize = 0;
                 while (count < index) : (count += 1) {
                     it.advanceCursor();
@@ -313,6 +329,9 @@ pub fn SinglyCircularList(comptime T: type) type {
             }
         };
 
+        allocator: std.mem.Allocator,
+        cursor: ?*Node = null, //cursor points to the last node so that the next is the frist node
+
         ///iterator takes const Self so that it doesn't modify the actual data structure
         ///when changes are made to the data structure you need to call iterator again
         ///for a new Iterator that contains the canges made to the data structure
@@ -320,23 +339,20 @@ pub fn SinglyCircularList(comptime T: type) type {
             return .{ .cursor = self.cursor, .end = self.cursor };
         }
 
-        allocator: std.mem.Allocator,
-        cursor: ?*Node = null, //cursor points to the last node so that the next is the frist node
-
         pub fn init(allocator: std.mem.Allocator) Self {
             return .{ .allocator = allocator };
         }
 
-        fn isEmpty(self: Self) bool {
+        pub fn isEmpty(self: Self) bool {
             return if (self.cursor == null) true else false;
         }
 
-        pub fn front(self: Self) T {
+        pub fn first(self: Self) T {
             assert(!self.isEmpty());
             return self.cursor.?.next.data;
         }
 
-        pub fn back(self: Self) T {
+        pub fn last(self: Self) T {
             assert(!self.isEmpty());
             return self.cursor.?.data;
         }
@@ -349,8 +365,8 @@ pub fn SinglyCircularList(comptime T: type) type {
             var new_node = try self.allocator.create(Node);
             new_node.data = value;
 
-            if (!self.isEmpty()) {
-                var current_cursor = self.cursor.?;
+            if (self.cursor) |cursor| {
+                var current_cursor = cursor;
                 new_node.next = current_cursor.next;
                 current_cursor.next = new_node;
             } else {
@@ -361,11 +377,11 @@ pub fn SinglyCircularList(comptime T: type) type {
         }
 
         pub fn append(self: *Self, value: T) !void {
-            if (!self.isEmpty()) {
+            if (self.cursor) |cursor| {
                 var new_node = try self.allocator.create(Node);
                 new_node.data = value;
 
-                var current_node = self.cursor.?;
+                var current_node = cursor;
                 new_node.next = current_node.next;
                 current_node.next = new_node;
                 //cursor should point to the last node
@@ -390,9 +406,9 @@ pub fn SinglyCircularList(comptime T: type) type {
         pub fn display(self: *Self) void {
             assert(!self.isEmpty());
             var itr = self.iterator();
-            print("\n[ front ==> ", .{});
+            print("\n[ first ==> ", .{});
             while (itr.next()) |next_node| {
-                print(" |{}| ", .{next_node.data});
+                print(" |{}| ", .{next_node});
             }
             print(" <== rear ]\n", .{});
         }
@@ -412,17 +428,17 @@ test "SinglyCircularList" {
     try circularlist.prepend(0);
     try circularlist.prepend(1);
     try circularlist.prepend(2);
-    try expect(circularlist.front() == 2);
-    try expect(circularlist.back() == 0);
+    try expect(circularlist.first() == 2);
+    try expect(circularlist.last() == 0);
     circularlist.advanceCursor();
-    try expect(circularlist.front() == 1);
-    try expect(circularlist.back() == 2);
+    try expect(circularlist.first() == 1);
+    try expect(circularlist.last() == 2);
     circularlist.advanceCursor();
     try circularlist.prepend(3);
-    try expect(circularlist.front() == 3);
-    try expect(circularlist.back() == 1);
+    try expect(circularlist.first() == 3);
+    try expect(circularlist.last() == 1);
     try circularlist.append(9);
-    try expect(circularlist.back() == 9);
+    try expect(circularlist.last() == 9);
 
     //test displaying and iterating over SinglyCircularList
 
