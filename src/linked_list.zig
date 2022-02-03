@@ -25,6 +25,11 @@ pub fn SinglyList(comptime T: type) type {
                 return null;
             }
 
+            ///get the current element pointed to by the iterator
+            pub fn current(it: Iterator) T {
+                return it.cursor.?.data;
+            }
+
             pub fn reset(it: *Iterator) void {
                 it.cursor = it.head;
             }
@@ -289,6 +294,11 @@ pub fn SinglyCircularList(comptime T: type) type {
 
             pub fn stop(it: *Iterator) void {
                 it.state = .stop;
+            }
+
+            ///get the current element pointed to by the iterator
+            pub fn current(it: Iterator) T {
+                return it.cursor.?.data;
             }
 
             pub fn reset(it: *Iterator) void {
