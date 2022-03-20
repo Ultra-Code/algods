@@ -413,6 +413,18 @@ pub fn SinglyCircularList(comptime T: type) type {
             self.allocator.destroy(remove_node);
         }
 
+        ///Empty the list of all its nodes
+        pub fn empty(self: Self) void {
+            var cursor = self.cursor.?;
+            var next_node = cursor.next;
+            while (next_node != cursor) {
+                const current_next_node = next_node.next;
+                self.allocator.destroy(next_node);
+                next_node = current_next_node;
+            }
+            self.allocator.destroy(cursor);
+        }
+
         pub fn display(self: *Self) void {
             assert(!self.isEmpty());
             var itr = self.iterator();
@@ -423,10 +435,8 @@ pub fn SinglyCircularList(comptime T: type) type {
             print(" <== rear ]\n", .{});
         }
 
-        pub fn deinit(self: *Self) void {
-            while (!self.isEmpty()) {
-                self.removeFirst();
-            }
+        pub fn deinit(self: Self) void {
+            empty(self);
         }
     };
 }
